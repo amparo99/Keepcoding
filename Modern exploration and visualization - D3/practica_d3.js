@@ -1,4 +1,4 @@
-d3.json('Practica/practica_airbnb.json')
+d3.json('practica_airbnb.json')
     .then((featureCollection) => {
         console.log(featureCollection.features)
         drawMap(featureCollection)
