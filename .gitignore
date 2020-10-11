@@ -1,0 +1,6 @@
+DataProcessing/**/.vscode
+**/.DS_Store
+DataProcessing/**/.idea/
+DataProcessing/**/target/
+DataProcessing/**/*.iml
+DataProcessing/**/sources/
