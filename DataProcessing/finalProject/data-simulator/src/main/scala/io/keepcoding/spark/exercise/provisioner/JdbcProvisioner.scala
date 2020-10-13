@@ -50,8 +50,16 @@ object JdbcProvisioner {
       statement.execute("INSERT INTO user_metadata (id, name, email, quota) VALUES ('00000000-0000-0000-0000-000000000019', 'carlota', 'carlota@gmail.com', 200000)")
       statement.execute("INSERT INTO user_metadata (id, name, email, quota) VALUES ('00000000-0000-0000-0000-000000000020', 'emilio', 'emilio@gmail.com', 200000)")
 
-      println("Creando la tabla con los resultados --> bytes (id TEXT, model TEXT, version TEXT, location TEXT)")
-      statement.execute("CREATE TABLE bytes(timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT);")
+      println("Creando la tabla con los resultados --> bytes (timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT)")
+      statement.execute("CREATE TABLE IF NOT EXISTS bytes(timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT);")
+
+      println("Creando la tabla con los resultados --> bytes hourly (timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT)")
+      statement.execute("CREATE TABLE IF NOT EXISTS bytes_hourly(timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT);")
+
+      println("Creando la tabla con los resultados --> user_quota_limit(email TEXT, usage BIGINT, quota BIGINT, timestamp TIMESTAMP)")
+      statement.execute("CREATE TABLE IF NOT EXISTS user_quota_limit(email TEXT, usage BIGINT, quota BIGINT, timestamp TIMESTAMP);")
+
+
     } catch {
       case e => e.printStackTrace()
     }
