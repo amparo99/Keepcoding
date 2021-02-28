@@ -1,9 +1,9 @@
-BigDataProcessing/**/.vscode
+DataProcessing/**/.vscode
 **/.DS_Store
-BigDataProcessing/**/.idea/
-BigDataProcessing/**/target/
-BigDataProcessing/**/*.iml
-BigDataProcessing/**/sources/
+DataProcessing/**/.idea/
+DataProcessing/**/target/
+DataProcessing/**/*.iml
+DataProcessing/**/sources/
 
 
 *.jpg
