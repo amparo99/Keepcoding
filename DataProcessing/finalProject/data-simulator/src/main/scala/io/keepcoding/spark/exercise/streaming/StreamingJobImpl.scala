@@ -12,7 +12,7 @@ object StreamingJobImpl extends StreamingJob {
   override val spark: SparkSession = SparkSession
     .builder()
     .master("local[*]")
-    .appName("Final exercise")
+    .appName("StreamingJobImpl")
     .getOrCreate()
 
   import spark.implicits._
@@ -23,6 +23,7 @@ object StreamingJobImpl extends StreamingJob {
       .format("kafka")
       .option("kafka.bootstrap.servers",kafkaServer)
       .option("subscribe",topic)
+      .option("startingOffsets", "earliest")
       .load()
   }
 
@@ -36,69 +37,22 @@ object StreamingJobImpl extends StreamingJob {
     ))
 
     dataFrame
-      .select(from_json(col("value").cast(StringType),schema).as("json"))
+      .select(from_json($"value".cast(StringType),schema).as("json"))
       .select("json.*")
 
   }
 
-  override def readUserMetadata(jdbcURI: String, jdbcTable: String, user: String, password: String): DataFrame = {
-
-    spark
-      .read
-      .format("jdbc")
-      .option("driver", "org.postgresql.Driver")
-      .option("url", jdbcURI)
-      .option("dbtable", jdbcTable)
-      .option("user", user)
-      .option("password", password)
-      .load()
-
-  }
-
-  override def enrichAntennaWithMetadata(telemetryDF: DataFrame, metadataDF: DataFrame): DataFrame = {
-    telemetryDF.as("telemetry")
-      .join(
-        metadataDF.as("metadata"),
-        $"telemetry.id" === $"metadata.id"
-      ).drop($"metadata.id")
-  }
-
-  override def computeTotalBytesAntenna(dataFrame: DataFrame): DataFrame = {
+  override def computeTotalBytes(dataFrame: DataFrame, aggColumn: String): DataFrame = {
     dataFrame
-      .select($"timestamp", $"antenna_id", $"bytes")
+      .select($"timestamp", col(aggColumn), $"bytes")
       .withColumn("timestamp", $"timestamp".cast(TimestampType))
       .withWatermark("timestamp","30 seconds")
-      .groupBy($"antenna_id",window($"timestamp", "1 minutes")) //aqui deberian ser 5 min, pero para que vaya mas rapido
+      .groupBy(window($"timestamp", "1 minutes"), col(aggColumn)) //aqui deberian ser 5 min, pero para que vaya mas rapido
       .agg(sum($"bytes").as("value"))
-      .withColumn("type", lit("antenna_total_bytes"))
-      .select( $"window.start".as("timestamp"), $"telemetry.antenna_id".as("id"), $"value", $"type")
+      .withColumn("type", lit(s"${aggColumn}_total_bytes"))
+      .select( $"window.start".as("timestamp"), col(aggColumn).as("id"), $"value", $"type")
 
   }
-
-  override def computeTotalBytesUser(dataFrame: DataFrame): DataFrame = {
-    dataFrame
-      .select($"timestamp", $"id", $"bytes")
-      .withColumn("timestamp", $"timestamp".cast(TimestampType))
-      .withWatermark("timestamp","30 seconds")
-      .groupBy($"id",window($"timestamp", "1 minutes")) //aqui deberian ser 5 min, pero para que vaya mas rapido
-      .agg(sum($"bytes").as("value"))
-      .withColumn("type", lit("user_total_bytes"))
-      .select( $"window.start".as("timestamp"), $"telemetry.id".as("id"), $"value", $"type")
-
-  }
-
-
-  override def computeTotalBytesApp(dataFrame: DataFrame): DataFrame = {
-    dataFrame
-      .select($"timestamp", $"app", $"bytes")
-      .withColumn("timestamp", $"timestamp".cast(TimestampType))
-      .withWatermark("timestamp","30 seconds")
-      .groupBy($"app",window($"timestamp", "1 minutes")) //aqui deberian ser 5 min, pero para que vaya mas rapido
-      .agg(sum($"bytes").as("value"))
-      .withColumn("type", lit("app_total_bytes"))
-      .select( $"window.start".as("timestamp"), $"telemetry.app".as("id"), $"value", $"type")
-  }
-
 
 
   override def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Future[Unit] = Future{
@@ -123,10 +77,13 @@ object StreamingJobImpl extends StreamingJob {
 
   override def writeToStorage(dataFrame: DataFrame, storageRootPath: String): Future[Unit] = Future{
     dataFrame
-      .withColumn("year", year($"timestamp"))
-      .withColumn("month", month($"timestamp"))
-      .withColumn("day", dayofmonth($"timestamp"))
-      .withColumn("hour", hour($"timestamp"))
+      .select(
+        $"id", $"antenna_id", $"bytes", $"app",
+        year($"timestamp".cast(TimestampType)).as("year"),
+        month($"timestamp".cast(TimestampType)).as("month"),
+        dayofmonth($"timestamp".cast(TimestampType)).as("day"),
+        hour($"timestamp".cast(TimestampType)).as("hour")
+      )
       .writeStream
       .partitionBy("year","month","day","hour")
       .format("parquet")

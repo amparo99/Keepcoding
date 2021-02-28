@@ -3,7 +3,11 @@ package io.keepcoding.spark.exercise.batch
 import java.time.OffsetDateTime
 
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.TimestampType
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 object BatchJobImpl extends BatchJob {
 
@@ -28,6 +32,7 @@ object BatchJobImpl extends BatchJob {
           $"day" === filterDate.getDayOfMonth &&
           $"hour" === filterDate.getHour
       )
+      .persist()
   }
 
   override def readUserMetadata(jdbcURI: String, jdbcTable: String, user: String, password: String): DataFrame = {
@@ -43,30 +48,28 @@ object BatchJobImpl extends BatchJob {
       .load()
   }
 
-  override def enrichTelemetryWithMetadata(storageDF: DataFrame, metadataDF: DataFrame): DataFrame = {
-    storageDF.as("antenna")
+
+  override def computeTotalBytes(storageDF: DataFrame, aggColumn: String, filterDate: OffsetDateTime): DataFrame = {
+
+    import storageDF.sparkSession.implicits._
+    storageDF
+      .select(col(aggColumn).as("id"), $"bytes")
+      .groupBy($"id")
+      .agg(sum($"bytes").as("value"))
+      .withColumn("type", lit(s"${aggColumn}_total_bytes"))
+      .withColumn("timestamp", lit(filterDate.toEpochSecond).cast(TimestampType))
+  }
+
+  override def computeQuotaExceeded(userBytes: DataFrame, metadataDF: DataFrame): DataFrame = {
+    userBytes.select($"id", $"value", $"timestamp").as("user")
       .join(
-        metadataDF.as("metadata"),
-        $"antenna.id" === $"metadata.id"
-      ).drop($"metadata.id")
+        metadataDF.select($"email", $"id", $"quota").as("metadata"),
+        $"user.id" === $"metadata.id" && $"user.value" > $"metadata.quota"
+      )
+      .select($"metadata.email".as("email"), $"user.value".as("usage"), $"metadata.quota".as("quota"), $"user.timestamp".as("timestamp"))
   }
 
-
-  override def computeBytesHourly(dataFrame: DataFrame): DataFrame = {
-    dataFrame
-      .select($"timestamp", $"id", $"value", $"type")
-      //.withColumn("timestamp", $"timestamp".cast(TimestampType))
-      .withWatermark("timestamp","30 seconds")
-      .groupBy($"id",window($"timestamp", "2 minutes"))  //deberia ser 1h
-      .agg(sum($"value").as("value"))
-      .withColumn("type", lit("user_total_bytes"))
-      .select( $"window.start".as("timestamp"), $"id", $"value", $"type")
-
-  }
-
-
-
-  override def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Unit = {
+  override def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Future[Unit] = Future {
     dataFrame
       .write
       .mode(SaveMode.Append)
@@ -77,15 +80,6 @@ object BatchJobImpl extends BatchJob {
       .option("user", user)
       .option("password", password)
       .save()
-  }
-
-  override def writeToStorage(dataFrame: DataFrame, storageRootPath: String): Unit = {
-    dataFrame
-      .write
-      .partitionBy("year", "month", "day", "hour")
-      .format("parquet")
-      .mode(SaveMode.Overwrite)
-      .save(s"${storageRootPath}/historical")
   }
 
   def main(args: Array[String]): Unit = run(args)

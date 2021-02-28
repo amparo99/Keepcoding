@@ -4,6 +4,11 @@ import java.time.OffsetDateTime
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
+import scala.concurrent._
+import ExecutionContext.Implicits.global
+
 
 trait BatchJob {
 
@@ -13,38 +18,45 @@ trait BatchJob {
 
   def readUserMetadata(jdbcURI: String, jdbcTable: String, user: String, password: String): DataFrame
 
-  def enrichTelemetryWithMetadata(storageDF: DataFrame, metadataDF: DataFrame): DataFrame
+  def computeTotalBytes(storageDF: DataFrame, aggColumn: String, filterDate: OffsetDateTime): DataFrame
 
-  def computeBytesHourly(dataFrame: DataFrame): DataFrame
+  def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Future[Unit]
 
-  def writeToJdbc(dataFrame: DataFrame, jdbcURI: String, jdbcTable: String, user: String, password: String): Unit
-
-  def writeToStorage(dataFrame: DataFrame, storageRootPath: String): Unit
+  def computeQuotaExceeded(userBytes: DataFrame, metadataDF: DataFrame): DataFrame
 
   def run(args: Array[String]): Unit = {
-    //val Array(filterDate, storagePath, jdbcUri, jdbcMetadataTable, aggJdbcTable, aggJdbcErrorTable, aggJdbcPercentTable, jdbcUser, jdbcPassword) = args
     val Array(filterDate, storagePath, jdbcUri, jdbcMetadataTable, jdbcUser, jdbcPassword) = args
     println(s"Running with: ${args.toSeq}")
 
     val storageDF = readFromStorage(storagePath, OffsetDateTime.parse(filterDate))
     val metadataDF = readUserMetadata(jdbcUri, jdbcMetadataTable, jdbcUser, jdbcPassword)
-    val antennaMetadataDF = enrichTelemetryWithMetadata(storageDF, metadataDF).cache()
 
-    storageDF.show()
+    val userBytes = computeTotalBytes(storageDF.withColumnRenamed("id", "user"), aggColumn = "user", filterDate = OffsetDateTime.parse(filterDate))
+    val antennaBytes = computeTotalBytes(storageDF.withColumnRenamed("antenna_id", "antenna"), aggColumn = "antenna", filterDate = OffsetDateTime.parse(filterDate))
+    val appBytes = computeTotalBytes(storageDF, aggColumn = "app", filterDate = OffsetDateTime.parse(filterDate))
 
-    val bytesHourly = computeBytesHourly(storageDF)
-    bytesHourly.show()
-    /*
+    val userQuotaExceeded = computeQuotaExceeded(userBytes, metadataDF)
 
+    println("metadata:")
+    metadataDF.show()
+    println("userBytes:")
+    userBytes.show()
+    println("users that exceeded the quota:")
+    userQuotaExceeded.show()
 
-    writeToJdbc(aggByCoordinatesDF, jdbcUri, aggJdbcTable, jdbcUser, jdbcPassword)
-    writeToJdbc(aggPercentStatusDF, jdbcUri, aggJdbcPercentTable, jdbcUser, jdbcPassword)
-    writeToJdbc(aggErroAntennaDF, jdbcUri, aggJdbcErrorTable, jdbcUser, jdbcPassword)
+    val toPostgres1 = writeToJdbc(userBytes, jdbcUri, "bytes_hourly", jdbcUser, jdbcPassword)
+    val toPostgres2 = writeToJdbc(antennaBytes, jdbcUri, "bytes_hourly", jdbcUser, jdbcPassword)
+    val toPostgres3 = writeToJdbc(appBytes, jdbcUri, "bytes_hourly", jdbcUser, jdbcPassword)
+    val toPostgres4 = writeToJdbc(userQuotaExceeded, jdbcUri, "user_quota_limit", jdbcUser, jdbcPassword)
 
-    writeToStorage(kafkaDF, storagePath)
-     */
-
-    spark.close()
+    Await.result(
+      Future.sequence(Seq(
+        toPostgres1,
+        toPostgres2,
+        toPostgres3,
+        toPostgres4
+      )), Duration.Inf
+    )
   }
 
 }

@@ -5,14 +5,13 @@ import java.sql.{Connection, DriverManager}
 object JdbcProvisioner {
 
   def main(args: Array[String]) {
-    val IpServer = "35.190.223.37"
+    val IpServer = "34.66.55.37"
 
     // connect to the database named "mysql" on the localhost
     val driver = "org.postgresql.Driver"
     val url = s"jdbc:postgresql://$IpServer:5432/postgres"
     val username = "postgres"
     val password = "keepcoding"
-
 
     var connection: Connection = null
 
@@ -51,10 +50,10 @@ object JdbcProvisioner {
       statement.execute("INSERT INTO user_metadata (id, name, email, quota) VALUES ('00000000-0000-0000-0000-000000000020', 'emilio', 'emilio@gmail.com', 200000)")
 
       println("Creando la tabla con los resultados --> bytes (timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT)")
-      statement.execute("CREATE TABLE IF NOT EXISTS bytes(timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT);")
+      statement.execute("CREATE TABLE IF NOT EXISTS bytes(id TEXT, value BIGINT, type TEXT, timestamp TIMESTAMP);")
 
       println("Creando la tabla con los resultados --> bytes hourly (timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT)")
-      statement.execute("CREATE TABLE IF NOT EXISTS bytes_hourly(timestamp TIMESTAMP, id TEXT, value BIGINT, type TEXT);")
+      statement.execute("CREATE TABLE IF NOT EXISTS bytes_hourly(id TEXT, value BIGINT, type TEXT,timestamp TIMESTAMP);")
 
       println("Creando la tabla con los resultados --> user_quota_limit(email TEXT, usage BIGINT, quota BIGINT, timestamp TIMESTAMP)")
       statement.execute("CREATE TABLE IF NOT EXISTS user_quota_limit(email TEXT, usage BIGINT, quota BIGINT, timestamp TIMESTAMP);")
